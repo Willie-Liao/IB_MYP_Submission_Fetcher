@@ -104,7 +104,30 @@ class SubmissionScraperGUI:
         canvas.bind("<Configure>", on_canvas_resize)
 
         canvas.configure(yscrollcommand=scrollbar.set)
-        
+
+        # Mouse wheel / touchpad scrolling support for macOS and Windows
+        def on_mousewheel(event):
+            # macOS: delta is small (1-10), use proportional
+            # Windows: delta is 120, normalize
+            if abs(event.delta) < 120:
+                # macOS touchpad - use delta directly for smooth momentum
+                scroll_units = -event.delta
+            else:
+                # Windows mouse wheel
+                scroll_units = int(-event.delta / 120) * 3
+            canvas.yview_scroll(scroll_units, "units")
+
+        # Make canvas focusable and auto-focus on hover
+        canvas.focus_set()
+        canvas.bind("<Enter>", lambda e: canvas.focus_set())
+
+        # Bind to canvas and frame
+        canvas.bind("<MouseWheel>", on_mousewheel)
+        self.student_list_frame.bind("<MouseWheel>", on_mousewheel)
+
+        # Store handler for binding to dynamically created checkboxes
+        self._mousewheel_handler = on_mousewheel
+
         # Button frame at the bottom (pack before canvas so it stays at bottom)
         bottom_btn_frame = ttk.Frame(frame)
         bottom_btn_frame.pack(side="bottom", fill="x", pady=10)
@@ -408,7 +431,10 @@ class SubmissionScraperGUI:
 
             cb = ttk.Checkbutton(self.student_list_frame, text=text, variable=var)
             cb.pack(fill="x", anchor="w", pady=2)
-        
+
+            # Bind mouse wheel to checkbox for scrolling
+            cb.bind("<MouseWheel>", self._mousewheel_handler)
+
         self.download_btn.config(state="normal")
         self.download_comments_btn.config(state="normal")
         total_files = sum(len(s['files']) for s in self.submissions)
