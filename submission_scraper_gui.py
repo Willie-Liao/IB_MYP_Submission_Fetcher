@@ -306,36 +306,44 @@ class SubmissionScraperGUI:
         return None
 
     def _merge_gradebook_feedback(self, soup, results_by_student):
-        """Merge criterion scores/comments from gradebook rows into results."""
+        """Merge criterion scores/comments from gradebook rows into results.
+        Also adds students from gradebook who have no submissions yet."""
         for row in soup.select('div.grid-table-row.student-grade'):
             student_link = row.select_one('a[href*="/teacher/users/"]')
             if not student_link:
                 continue
-            
+
             student_name = student_link.get_text(strip=True)
+
+            # If student not in results yet, add them with empty files list
             if student_name not in results_by_student:
-                continue
-            
+                results_by_student[student_name] = {
+                    'student_name': student_name,
+                    'files': [],
+                    'criteria': [],
+                    'comment': ''
+                }
+
             criteria = []
             for criteria_section in row.select('div.criteria-grades'):
                 label_tag = criteria_section.find('label')
                 label = label_tag.get_text(strip=True) if label_tag else 'Criterion'
-                
+
                 selected = criteria_section.select_one('div.points-button.selected')
                 score_text = selected.get_text(strip=True) if selected else ''
-                
+
                 if score_text:
                     criteria.append({
                         'name': label,
                         'score': score_text
                     })
-            
+
             comment_text = ''
             comment_area = row.select_one('textarea[name="core_task[task_comment][comment]"]')
             if comment_area:
                 comment_html = comment_area.get_text() or ''
                 comment_text = self._html_to_text(comment_html)
-            
+
             results_by_student[student_name]['criteria'] = criteria
             results_by_student[student_name]['comment'] = comment_text
 
@@ -365,25 +373,31 @@ class SubmissionScraperGUI:
         for i, sub in enumerate(self.submissions):
             var = tk.BooleanVar(value=True)
             self.student_vars[sub['student_name']] = var
-            
+
             file_count = len(sub['files'])
             criteria = sub.get('criteria') or []
             comment = (sub.get('comment') or '').strip()
-            
-            parts = [f"{file_count} file{'s' if file_count != 1 else ''}"]
+
+            # Show different text based on whether student has submissions
+            if file_count == 0:
+                parts = ["0 files - NO SUBMISSION"]
+            else:
+                parts = [f"{file_count} file{'s' if file_count != 1 else ''}"]
+
             if criteria:
                 score_str = ', '.join(c['score'] for c in criteria)
                 parts.append(f"score: {score_str}")
             parts.append(f"comment: {'TRUE' if comment else 'FALSE'}")
-            
+
             text = f"{sub['student_name']} ({', '.join(parts)})"
-            
+
             cb = ttk.Checkbutton(self.student_list_frame, text=text, variable=var)
             cb.pack(anchor="w", pady=2)
         
         self.download_btn.config(state="normal")
         total_files = sum(len(s['files']) for s in self.submissions)
-        self.set_status(f"Found {len(self.submissions)} students with {total_files} files")
+        no_submission_count = sum(1 for s in self.submissions if len(s['files']) == 0)
+        self.set_status(f"Found {len(self.submissions)} students ({no_submission_count} with no submissions, {total_files} total files)")
     
     def select_all(self):
         """Select all students."""
@@ -441,29 +455,35 @@ class SubmissionScraperGUI:
             downloaded = 0
             skipped = 0
             failed = 0
+            no_submission = 0
             total = sum(len(s['files']) for s in submissions)
-            
+
             for sub in submissions:
+                # Skip students with no files - don't create folder
+                if not sub['files']:
+                    no_submission += 1
+                    continue
+
                 student_folder = os.path.join(output_dir, self._get_valid_filename(sub['student_name']))
-                
+
                 for file_info in sub['files']:
                     filepath = os.path.join(student_folder, self._get_valid_filename(file_info['name']))
                     result = self._download_file(filepath, file_info['url'])
-                    
+
                     if result == True:
                         downloaded += 1
                     elif result == 'skipped':
                         skipped += 1
                     else:
                         failed += 1
-                    
-                    self.root.after(0, lambda d=downloaded, s=skipped, f=failed, t=total: 
+
+                    self.root.after(0, lambda d=downloaded, s=skipped, f=failed, t=total:
                         self.set_status(f"Progress: {d+s+f}/{t} (new: {d}, skipped: {s}, failed: {f})"))
-                
+
                 self._write_feedback_markdown(student_folder, sub)
-            
-            self.root.after(0, lambda: messagebox.showinfo("Complete", 
-                f"Download complete!\n\nNew: {downloaded}\nSkipped: {skipped}\nFailed: {failed}"))
+
+            self.root.after(0, lambda: messagebox.showinfo("Complete",
+                f"Download complete!\n\nStudents selected: {len(submissions)}\nNo submission: {no_submission}\nFiles - New: {downloaded}, Skipped: {skipped}, Failed: {failed}"))
             
         except Exception as e:
             self.root.after(0, lambda: messagebox.showerror("Error", str(e)))
