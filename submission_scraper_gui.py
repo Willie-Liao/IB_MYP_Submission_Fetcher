@@ -98,12 +98,20 @@ class SubmissionScraperGUI:
         canvas.create_window((0, 0), window=self.student_list_frame, anchor="nw")
         canvas.configure(yscrollcommand=scrollbar.set)
         
+        # Button frame at the bottom (pack before canvas so it stays at bottom)
+        bottom_btn_frame = ttk.Frame(frame)
+        bottom_btn_frame.pack(side="bottom", fill="x", pady=10)
+
+        # Download button
+        self.download_btn = ttk.Button(bottom_btn_frame, text="Download Selected", command=self.download_selected, state="disabled")
+        self.download_btn.pack(side="left", padx=5)
+
+        # Download comments only button
+        self.download_comments_btn = ttk.Button(bottom_btn_frame, text="Download Comments Only", command=self.download_comments_only, state="disabled")
+        self.download_comments_btn.pack(side="left", padx=5)
+
         canvas.pack(side="left", fill="both", expand=True, pady=10)
         scrollbar.pack(side="right", fill="y")
-        
-        # Download button
-        self.download_btn = ttk.Button(frame, text="Download Selected", command=self.download_selected, state="disabled")
-        self.download_btn.pack(pady=10)
     
     def create_status_frame(self):
         """Create the status/log section."""
@@ -395,6 +403,7 @@ class SubmissionScraperGUI:
             cb.pack(anchor="w", pady=2)
         
         self.download_btn.config(state="normal")
+        self.download_comments_btn.config(state="normal")
         total_files = sum(len(s['files']) for s in self.submissions)
         no_submission_count = sum(1 for s in self.submissions if len(s['files']) == 0)
         self.set_status(f"Found {len(self.submissions)} students ({no_submission_count} with no submissions, {total_files} total files)")
@@ -491,7 +500,63 @@ class SubmissionScraperGUI:
             self.root.after(0, lambda: self.download_btn.config(state="normal"))
             self.root.after(0, self.progress.stop)
             self.root.after(0, lambda: self.set_status("Done"))
-    
+
+    def download_comments_only(self):
+        """Download only comment markdown files for selected students with comments."""
+        selected = [name for name, var in self.student_vars.items() if var.get()]
+
+        if not selected:
+            messagebox.showwarning("Warning", "No students selected")
+            return
+
+        output_dir = self.output_entry.get().strip()
+        if not output_dir:
+            messagebox.showerror("Error", "Please specify output directory")
+            return
+
+        # Filter submissions to selected students
+        selected_submissions = [s for s in self.submissions if s['student_name'] in selected]
+
+        self.download_comments_btn.config(state="disabled")
+        self.download_btn.config(state="disabled")
+        self.progress.start()
+        self.set_status("Downloading comments...")
+
+        thread = threading.Thread(target=self._download_comments_thread, args=(selected_submissions, output_dir))
+        thread.start()
+
+    def _download_comments_thread(self, submissions, output_dir):
+        """Background thread for downloading comments only."""
+        try:
+            comments_written = 0
+            no_comment = 0
+
+            for sub in submissions:
+                comment = (sub.get('comment') or '').strip()
+                criteria = sub.get('criteria') or []
+
+                # Skip students with no comments and no criteria
+                if not comment and not criteria:
+                    no_comment += 1
+                    continue
+
+                student_folder = os.path.join(output_dir, self._get_valid_filename(sub['student_name']))
+                os.makedirs(student_folder, exist_ok=True)
+
+                self._write_feedback_markdown(student_folder, sub)
+                comments_written += 1
+
+            self.root.after(0, lambda: messagebox.showinfo("Complete",
+                f"Comments download complete!\n\nStudents selected: {len(submissions)}\nComments written: {comments_written}\nNo comments: {no_comment}"))
+
+        except Exception as e:
+            self.root.after(0, lambda: messagebox.showerror("Error", str(e)))
+        finally:
+            self.root.after(0, lambda: self.download_comments_btn.config(state="normal"))
+            self.root.after(0, lambda: self.download_btn.config(state="normal"))
+            self.root.after(0, self.progress.stop)
+            self.root.after(0, lambda: self.set_status("Done"))
+
     def _get_valid_filename(self, s):
         """Convert string to valid filename."""
         s = str(s).strip().replace(' ', '_')
