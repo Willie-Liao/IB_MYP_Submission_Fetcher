@@ -94,8 +94,15 @@ class SubmissionScraperGUI:
             "<Configure>",
             lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
         )
-        
-        canvas.create_window((0, 0), window=self.student_list_frame, anchor="nw")
+
+        # Create window on canvas that fills the width
+        canvas_window = canvas.create_window((0, 0), window=self.student_list_frame, anchor="nw", width=canvas.winfo_width())
+
+        # Update window width when canvas is resized
+        def on_canvas_resize(event):
+            canvas.itemconfig(canvas_window, width=event.width)
+        canvas.bind("<Configure>", on_canvas_resize)
+
         canvas.configure(yscrollcommand=scrollbar.set)
         
         # Button frame at the bottom (pack before canvas so it stays at bottom)
@@ -400,7 +407,7 @@ class SubmissionScraperGUI:
             text = f"{sub['student_name']} ({', '.join(parts)})"
 
             cb = ttk.Checkbutton(self.student_list_frame, text=text, variable=var)
-            cb.pack(anchor="w", pady=2)
+            cb.pack(fill="x", anchor="w", pady=2)
         
         self.download_btn.config(state="normal")
         self.download_comments_btn.config(state="normal")
