@@ -8,13 +8,14 @@ from bs4 import BeautifulSoup
 from multiprocessing import Pool, freeze_support
 from html import unescape
 from urllib.parse import urljoin, urlparse
+from dotenv import load_dotenv
 
 
-# ============ DEFAULT CONFIG ============
-DEFAULT_USERNAME = ""
-DEFAULT_PASSWORD = ""
-DEFAULT_OUTPUT_DIR = "/Users/willieliao/Downloads"
-# ========================================
+load_dotenv()
+
+DEFAULT_USERNAME = os.getenv("MANAGEBAC_USERNAME", "")
+DEFAULT_PASSWORD = os.getenv("MANAGEBAC_PASSWORD", "")
+DEFAULT_OUTPUT_DIR = os.getenv("DEFAULT_OUTPUT_DIR", os.path.expanduser("~/Downloads"))
 
 
 class SubmissionScraperGUI:
